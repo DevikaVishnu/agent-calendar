@@ -1,12 +1,14 @@
 import anthropic
 import json
+import os
 from datetime import datetime, timedelta
-from calendar_tools import create_event, list_events, delete_event, update_event
+from calendar_tools import create_event, list_events, delete_event, update_event, delete_event_by_title
 
 # Initialize Claude
-client = os.getenv("ANTHROPIC_API_KEY")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 if ANTHROPIC_API_KEY is None:
-    raise RuntimeError("ANTHROPIC_API_KEY env var not set")
+    raise ValueError("ANTHROPIC_API_KEY environment variable not set!")
+client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 # Define tools for Claude
 CALENDAR_TOOLS = [
@@ -60,8 +62,30 @@ CALENDAR_TOOLS = [
             },
             "required": ["date"]
         }
+    },
+    {
+        "name": "delete_event_by_title",
+        "description": "Delete calendar event with a specific title. Use this when user asks says they want to remove an event or take something off of their calendar",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "The event title or summary (e.g., 'Team meeting', 'Dentist appointment')"
+                },
+                "date": {
+                    "type": "string",
+                    "description": "Date in YYYY-MM-DD format, or 'today' for today's date"
+                },
+                "days_ahead": {
+                    "type": "integer",
+                    "description": "Number of days to look ahead from the start date (default 1)",
+                    "default": 1
+                }
+            },
+            "required": ["title"]
+        }
     }
-
 ]
 
 def process_tool_call(tool_name, tool_input):
@@ -73,8 +97,8 @@ def process_tool_call(tool_name, tool_input):
     elif tool_name == "list_events":
         return list_events(**tool_input)
     
-    elif tool_name == "delete_event":
-        return delete_event(**tool_input)
+    elif tool_name == "delete_event_by_title":
+        return delete_event_by_title(**tool_input)
     
     elif tool_name == "update_event":
         return update_event(**tool_input)

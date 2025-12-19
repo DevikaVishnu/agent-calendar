@@ -1,5 +1,5 @@
 import os.path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -107,8 +107,8 @@ def list_events(date=None, days_ahead=1):
     
     end_date = start_date + timedelta(days=days_ahead)
     
-    time_min = start_date.isoformat() + 'Z'
-    time_max = end_date.isoformat() + 'Z'
+    time_min = start_date.astimezone().isoformat()
+    time_max = end_date.astimezone().isoformat()
     
     events_result = service.events().list(
         calendarId='primary',
@@ -138,14 +138,35 @@ def delete_event(event_id):
     service.events().delete(calendarId='primary', eventId=event_id).execute()
     return {'success': True, 'message': f'Event {event_id} deleted'}
 
-def delete_event_by_title(date=None, days_ahead=1, title):
+def delete_event_by_title(title, date="today", days_ahead=1):
     service = get_calendar_service()
 
-    events_list = list_events()
+    events_list = list_events(date=date, days_ahead=days_ahead)
+    if not events_list:
+        return {
+            "success": False,
+            "message": f"No events found on {date}"
+        }
+
     for event in events_list:
-        if event['title'] == title:
-            delete_event(event['id'])
-    return
+        if event['title'].lower() == title.lower():
+            try:
+                delete_event(event['id'])
+                return {
+                    "success": True,
+                    "message": f"Deleted event: {event['title']}"
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "message": f"Error deleting event: {str(e)}"
+                }
+
+    return {
+        "success": False,
+        "message": f"Could not find an event with title '{title}' on {date}"
+    }
+
 
 def update_event(event_id, title=None, date=None, time=None, duration_minutes=None):
     """Update an existing event"""

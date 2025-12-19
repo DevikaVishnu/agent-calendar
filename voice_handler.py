@@ -2,12 +2,15 @@ import openai
 import os
 import platform
 import subprocess
+from dotenv import load_dotenv
 from pathlib import Path
 
+load_dotenv()
 # Initialize OpenAI client
-client = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 if OPENAI_API_KEY is None:
     raise RuntimeError("OPENAI_API_KEY env var not set")
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 
 def transcribe_audio(audio_file_path):
