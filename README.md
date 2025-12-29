@@ -6,7 +6,7 @@ AI-powered voice assistant for Google Calendar
 
 1. Clone the repo:
 ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/DevikaVishnu/agent-calendar.git
    cd agent-calender
 ```
 
