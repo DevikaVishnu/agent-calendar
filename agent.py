@@ -3,12 +3,18 @@ import json
 import os
 from datetime import datetime, timedelta
 from calendar_tools import create_event, list_events, delete_event, update_event, delete_event_by_title
+from logger_config import get_logger
+
+logger = get_logger(__name__)
 
 # Initialize Claude
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 if ANTHROPIC_API_KEY is None:
+    logger.critical("ANTHROPIC_API_KEY not found in environment variables!")
     raise ValueError("ANTHROPIC_API_KEY environment variable not set!")
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
+logger.debug("Anthropic API key loaded successfully")
 
 # Define tools for Claude
 CALENDAR_TOOLS = [
@@ -90,21 +96,28 @@ CALENDAR_TOOLS = [
 
 def process_tool_call(tool_name, tool_input):
     """Execute the actual tool function"""
+    logger.info(f"Processing tool call: {tool_name}")
+    logger.debug(f"Tool input: {json.dumps(tool_input, indent=2)}")
     
-    if tool_name == "create_event":
-        return create_event(**tool_input)
-    
-    elif tool_name == "list_events":
-        return list_events(**tool_input)
-    
-    elif tool_name == "delete_event_by_title":
-        return delete_event_by_title(**tool_input)
-    
-    elif tool_name == "update_event":
-        return update_event(**tool_input)
-    
-    else:
-        return {"error": f"Unknown tool: {tool_name}"}
+    try:
+        if tool_name == "create_event":
+            result = create_event(**tool_input)
+        elif tool_name == "list_events":
+            result = list_events(**tool_input)
+        elif tool_name == "delete_event_by_title":
+            result = delete_event_by_title(**tool_input)
+        elif tool_name == "delete_event":
+            result = delete_event(**tool_input)
+        elif tool_name == "update_event":
+            result = update_event(**tool_input)
+        else:
+            logger.error(f"Unknown tool: {tool_name}")
+            result = {"error": f"Unknown tool: {tool_name}"}
+        logger.debug(f"Tool result: {json.dumps(result, indent=2)}")
+        return result
+    except Exception as e:
+        logger.error(f"Tool execution failed: {str(e)}", exc_info=True)
+        return {"error": str(e)}
 
 def chat_with_agent(user_message):
     """
@@ -116,7 +129,7 @@ def chat_with_agent(user_message):
     Returns:
         The agent's final response
     """
-    
+    logger.info(f"User message: '{user_message}'")
     # Add context about current date/time
     current_date = datetime.now().strftime("%Y-%m-%d")
     current_time = datetime.now().strftime("%H:%M")
@@ -130,7 +143,7 @@ When they say times like '2pm', '3:30', convert to 24-hour format.
 Be conversational and friendly in your responses."""
 
     messages = [{"role": "user", "content": user_message}]
-    
+    logger.debug("Sending initial request to Claude")
     # Initial request to Claude
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
@@ -139,22 +152,23 @@ Be conversational and friendly in your responses."""
         tools=CALENDAR_TOOLS,
         messages=messages
     )
-    
+    logger.debug(f"Claude response stop_reason: {response.stop_reason}")
     # Handle tool use loop
+    iterations = 0
     while response.stop_reason == "tool_use":
         # Claude wants to call a tool!
         # Extract what tool and what parameters
+        iterations += 1
+        logger.info(f"Tool use iteration {iterations}")
+
         tool_use_block = next(block for block in response.content if block.type == "tool_use")
         tool_name = tool_use_block.name
         tool_input = tool_use_block.input
-        
-        print(f"\n🔧 Agent calling tool: {tool_name}")
-        print(f"   Input: {json.dumps(tool_input, indent=2)}")
-        
+
+        logger.info(f"Claude wants to call: {tool_name}")
+
         # Execute the tool
         tool_result = process_tool_call(tool_name, tool_input)
-        
-        print(f"   Result: {json.dumps(tool_result, indent=2)}")
         
         # Continue conversation with tool result
         messages.append({"role": "assistant", "content": response.content})
@@ -166,7 +180,9 @@ Be conversational and friendly in your responses."""
                 "content": json.dumps(tool_result)
             }]
         })
-        
+
+        logger.debug("Sending tool result back to Claude")
+
         # Get next response from Claude
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
@@ -181,7 +197,7 @@ Be conversational and friendly in your responses."""
         (block.text for block in response.content if hasattr(block, "text")),
         "Done!"
     )
-    
+    logger.info(f"Agent response: '{final_response}'")
     return final_response
 
 # Test it!

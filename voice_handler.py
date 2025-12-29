@@ -4,14 +4,19 @@ import platform
 import subprocess
 from dotenv import load_dotenv
 from pathlib import Path
+from logger_config import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 # Initialize OpenAI client
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 if OPENAI_API_KEY is None:
+    logger.critical("OPENAI_API_KEY not found in environment variables!")
     raise RuntimeError("OPENAI_API_KEY env var not set")
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+logger.debug("OpenAI API key loaded successfully")
 
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 def transcribe_audio(audio_file_path):
     """
@@ -23,6 +28,7 @@ def transcribe_audio(audio_file_path):
     Returns:
         Transcribed text
     """
+    logger.info(f"Transcribing audio file: {audio_file_path}")
     try:
         with open(audio_file_path, "rb") as audio_file:
             transcript = client.audio.transcriptions.create(
@@ -30,9 +36,10 @@ def transcribe_audio(audio_file_path):
                 file=audio_file,
                 language="en"  # Optional: specify language
             )
+        logger.info(f"Transcription successful: '{transcript.text}'")
         return transcript.text
     except Exception as e:
-        print(f"❌ Transcription error: {e}")
+        logger.error(f"Transcription failed: {str(e)}", exc_info=True)
         return None
 
 def text_to_speech(text, output_file="response.mp3", voice="alloy"):
@@ -47,6 +54,8 @@ def text_to_speech(text, output_file="response.mp3", voice="alloy"):
     Returns:
         Path to the generated audio file
     """
+    logger.info(f"Generating speech for text (length: {len(text)} chars)")
+    logger.debug(f"Text to speak: '{text}'")
     try:
         response = client.audio.speech.create(
             model="tts-1",
@@ -55,10 +64,11 @@ def text_to_speech(text, output_file="response.mp3", voice="alloy"):
         )
         
         response.stream_to_file(output_file)
+        logger.info(f"Speech generated successfully: {output_file}")
         return output_file
     
     except Exception as e:
-        print(f"❌ TTS error: {e}")
+        logger.error(f"TTS generation failed: {str(e)}", exc_info=True)
         return None
 
 def play_audio(audio_file):
@@ -68,6 +78,7 @@ def play_audio(audio_file):
     Args:
         audio_file: Path to audio file
     """
+    logger.info(f"Playing audio file: {audio_file}")
     system = platform.system()
     
     try:
@@ -78,10 +89,12 @@ def play_audio(audio_file):
         elif system == "Windows":
             subprocess.run(["start", audio_file], shell=True, check=True)
         else:
+            logger.warning(f"Unknown system: {system}, cannot auto-play")
             print(f"⚠️  Can't auto-play on {system}. File saved at: {audio_file}")
-    
+        logger.info("Audio playback completed")
+
     except Exception as e:
-        print(f"❌ Error playing audio: {e}")
+        logger.error(f"Audio playback failed: {str(e)}", exc_info=True)
         print(f"Audio saved at: {audio_file}")
 
 # Test functions

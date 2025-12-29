@@ -5,7 +5,9 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from dateutil import parser
+from logger_config import get_logger
 
+logger = get_logger(__name__)
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def get_calendar_service():
@@ -20,27 +22,33 @@ def get_calendar_service():
     5. Save new token for next time
     6. Return authenticated 'service' object
     """
+    logger.debug("Getting calendar service...")
     creds = None
 
     # Do we have saved credentials?
     if os.path.exists('token.json'):
+        logger.debug("Found existing token.json")
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     
     # Are they valid?
     if not creds or not creds.valid:
         # Try to refresh if expired
         if creds and creds.expired and creds.refresh_token:
+            logger.info("Access token expired, refreshing...")
             creds.refresh(Request())
         else:
             # No valid creds → log in via browser
+            logger.info("No valid credentials, starting OAuth flow...")
             flow = InstalledAppFlow.from_client_secrets_file(
                 'credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
         # Save for next time
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
+        logger.debug("Saved credentials to token.json")
 
     # Return service object (used to make API calls)
+    logger.debug("Calendar service authenticated successfully")
     return build('calendar', 'v3', credentials=creds)
 
 def create_event(title, date, time, duration_minutes=60, description=""):
@@ -57,35 +65,44 @@ def create_event(title, date, time, duration_minutes=60, description=""):
     Returns:
         Dictionary with event details
     """
-    service = get_calendar_service()
+    logger.info(f"Creating event: '{title}' on {date} at {time} for {duration_minutes} min")
     
-    # Parse datetime
-    datetime_str = f"{date} {time}"
-    start_time = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
-    end_time = start_time + timedelta(minutes=duration_minutes)
-    
-    event = {
-        'summary': title,
-        'description': description,
-        'start': {
-            'dateTime': start_time.isoformat(),
-            'timeZone': 'America/New_York',  # Change to your timezone if needed
-        },
-        'end': {
-            'dateTime': end_time.isoformat(),
-            'timeZone': 'America/New_York',
-        },
-    }
-    # Step 5: Send to Google Calendar API
-    created_event = service.events().insert(calendarId='primary', body=event).execute()
-    
-    return {
-        'id': created_event['id'],
-        'title': created_event['summary'],
-        'start': created_event['start']['dateTime'],
-        'link': created_event.get('htmlLink')
-    }
+    try:
+        service = get_calendar_service()
+        
+        # Parse datetime
+        datetime_str = f"{date} {time}"
+        start_time = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
+        end_time = start_time + timedelta(minutes=duration_minutes)
+        
+        event = {
+            'summary': title,
+            'description': description,
+            'start': {
+                'dateTime': start_time.isoformat(),
+                'timeZone': 'America/New_York',  # Change to your timezone if needed
+            },
+            'end': {
+                'dateTime': end_time.isoformat(),
+                'timeZone': 'America/New_York',
+            },
+        }
+        # Step 5: Send to Google Calendar API
+        created_event = service.events().insert(calendarId='primary', body=event).execute()
+        logger.info(f"Successfully created event: {created_event['id']}")
+        logger.debug(f"Event details: {created_event}")
 
+        return {
+            'id': created_event['id'],
+            'title': created_event['summary'],
+            'start': created_event['start']['dateTime'],
+            'link': created_event.get('htmlLink')
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to create event '{title}': {str(e)}", exc_info=True)
+        raise
+    
 def list_events(date=None, days_ahead=1):
     """
     List calendar events
@@ -97,76 +114,104 @@ def list_events(date=None, days_ahead=1):
     Returns:
         List of event dictionaries
     """
-    service = get_calendar_service()
-    
-    # Parse date
-    if date == "today" or date is None:
-        start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    else:
-        start_date = datetime.strptime(date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    end_date = start_date + timedelta(days=days_ahead)
-    
-    time_min = start_date.astimezone().isoformat()
-    time_max = end_date.astimezone().isoformat()
-    
-    events_result = service.events().list(
-        calendarId='primary',
-        timeMin=time_min,
-        timeMax=time_max,
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
-    
-    events = events_result.get('items', [])
-    
-    result = []
-    for event in events:
-        start = event['start'].get('dateTime', event['start'].get('date'))
-        result.append({
-            'id': event['id'],
-            'title': event['summary'],
-            'start': start,
-            'description': event.get('description', '')
-        })
-    
-    return result
+    logger.info(f"Listing events for date={date}, days_ahead={days_ahead}")
+
+    try:
+        service = get_calendar_service()
+        
+        # Parse date
+        if date == "today" or date is None:
+            start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            start_date = datetime.strptime(date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        end_date = start_date + timedelta(days=days_ahead)
+        
+        time_min = start_date.astimezone().isoformat()
+        time_max = end_date.astimezone().isoformat()
+
+        logger.debug(f"Querying events from {time_min} to {time_max}")
+
+        events_result = service.events().list(
+            calendarId='primary',
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        
+        events = events_result.get('items', [])
+        logger.info(f"Found {len(events)} events")
+
+        result = []
+        for event in events:
+            start = event['start'].get('dateTime', event['start'].get('date'))
+            result.append({
+                'id': event['id'],
+                'title': event['summary'],
+                'start': start,
+                'description': event.get('description', '')
+            })
+            logger.debug(f"Event: {event['summary']} at {start}")
+        
+        return result
+    except Exception as e:
+        logger.error(f"Failed to list events: {str(e)}", exc_info=True)
+        raise
 
 def delete_event(event_id):
     """Delete a calendar event by ID"""
-    service = get_calendar_service()
-    service.events().delete(calendarId='primary', eventId=event_id).execute()
-    return {'success': True, 'message': f'Event {event_id} deleted'}
+    logger.info(f"Deleting event with ID: {event_id}")
+
+    try:
+        service = get_calendar_service()
+        service.events().delete(calendarId='primary', eventId=event_id).execute()
+        return {'success': True, 'message': f'Event {event_id} deleted'}
+    except Exception as e:
+        logger.error(f"Failed to delete event {event_id}: {str(e)}", exc_info=True)
+        raise
 
 def delete_event_by_title(title, date="today", days_ahead=1):
-    service = get_calendar_service()
+    logger.info(f"Attempting to delete event by title: '{title}' on {date}")
 
-    events_list = list_events(date=date, days_ahead=days_ahead)
-    if not events_list:
+    try:
+        service = get_calendar_service()
+
+        events_list = list_events(date=date, days_ahead=days_ahead)
+        if not events_list:
+            logger.warning(f"No events found on {date}")
+            return {
+                "success": False,
+                "message": f"No events found on {date}"
+            }
+
+        for event in events_list:
+            if event['title'].lower() == title.lower():
+                logger.info(f"Found matching event: '{event['title']}' (ID: {event['id']})")
+
+                try:
+                    delete_event(event['id'])
+                    return {
+                        "success": True,
+                        "message": f"Deleted event: {event['title']}"
+                    }
+                except Exception as e:
+                    logger.error(f"Error during deletion: {str(e)}")
+                    return {
+                        "success": False,
+                        "message": f"Error deleting event: {str(e)}"
+                    }
+        logger.warning(f"No event found matching title '{title}' on {date}")
         return {
             "success": False,
-            "message": f"No events found on {date}"
+            "message": f"Could not find an event with title '{title}' on {date}"
         }
-
-    for event in events_list:
-        if event['title'].lower() == title.lower():
-            try:
-                delete_event(event['id'])
-                return {
-                    "success": True,
-                    "message": f"Deleted event: {event['title']}"
-                }
-            except Exception as e:
-                return {
-                    "success": False,
-                    "message": f"Error deleting event: {str(e)}"
-                }
-
-    return {
-        "success": False,
-        "message": f"Could not find an event with title '{title}' on {date}"
-    }
-
+    except Exception as e:
+        logger.error(f"Failed to delete event by title '{title}': {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"Error: {str(e)}"
+        }
 
 def update_event(event_id, title=None, date=None, time=None, duration_minutes=None):
     """Update an existing event"""

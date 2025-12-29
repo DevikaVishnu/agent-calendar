@@ -6,7 +6,9 @@ import sys
 from datetime import datetime
 from agent import chat_with_agent
 from voice_handler import transcribe_audio, text_to_speech, play_audio
+from logger_config import get_logger
 
+logger = get_logger(__name__)
 # Audio recording settings
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
@@ -81,6 +83,7 @@ def voice_interaction():
     4. Convert response to speech
     5. Play audio response
     """
+    logger.info("Starting voice interaction")
     
     print("\n" + "="*50)
     print("🗓️  VOICE CALENDAR AGENT")
